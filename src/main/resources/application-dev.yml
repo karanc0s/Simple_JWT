@@ -1,0 +1,8 @@
+spring:
+  application:
+    name: simpleJWT1
+
+
+logging:
+  level:
+    root: debug
