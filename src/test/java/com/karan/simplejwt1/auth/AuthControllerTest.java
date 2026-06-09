@@ -1,10 +1,7 @@
 package com.karan.simplejwt1.auth;
 
 import com.karan.simplejwt1.auth.service.AuthService;
-import com.karan.simplejwt1.domain.AuthRequest;
-import com.karan.simplejwt1.domain.AuthResponse;
-import com.karan.simplejwt1.domain.RegisterRequest;
-import com.karan.simplejwt1.domain.UserDataResponse;
+import com.karan.simplejwt1.domain.*;
 import com.karan.simplejwt1.exception.InvalidCredentialsException;
 import com.karan.simplejwt1.exception.NotFoundException;
 import org.junit.jupiter.api.Test;
@@ -39,7 +36,9 @@ public class AuthControllerTest {
         var request = AuthRequest.builder().username("user123").password("password").build();
 
         var response = AuthResponse.builder()
-                .token("jwt-token").userData(UserDataResponse.builder()
+                .accessToken("jwt-accessToken")
+                .refreshToken("jwt-refreshToken")
+                .userData(UserDataResponse.builder()
                         .username("user123")
                         .email("user@gmail.com")
                         .build()
@@ -50,7 +49,8 @@ public class AuthControllerTest {
         this.mockMvc.perform(post("/auth/login").contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.token").value("jwt-token"))
+                .andExpect(jsonPath("$.accessToken").value("jwt-accessToken"))
+                .andExpect(jsonPath("$.refreshToken").value("jwt-refreshToken"))
                 .andExpect(jsonPath("$.userData.username").value("user123"))
                 .andExpect(jsonPath("$.userData.email").value("user@gmail.com"))
                 .andDo(print());
@@ -101,12 +101,7 @@ public class AuthControllerTest {
                 .password("User@123")
                 .email("user123@gmail.com")
                 .build();
-        var response = AuthResponse.builder()
-                .token("jwt-token").userData(UserDataResponse.builder()
-                        .username("user123")
-                        .email("user123@gmail.com")
-                        .build()
-                ).build();
+        var response = "user123";
 
         when(authService.register(any(RegisterRequest.class))).thenReturn(response);
 
@@ -114,9 +109,7 @@ public class AuthControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.token").value("jwt-token"))
-                .andExpect(jsonPath("$.userData.username").value("user123"))
-                .andExpect(jsonPath("$.userData.email").value("user123@gmail.com"))
+                .andExpect(jsonPath("$").value(response))
                 .andDo(print());
 
         verify(authService , times(1)).register(any(RegisterRequest.class));
@@ -125,6 +118,30 @@ public class AuthControllerTest {
                         req.username().equals("user123") && req.password().equals("User@123")
                 )
         );
+    }
+
+    @Test
+    public void shouldRefreshToken() throws Exception{
+        var request = TokenRequest.builder()
+                .token("jwt-refresh-token")
+                .build();
+
+        var response = TokenResponse.builder()
+                .accessToken("jwt-accessToken")
+                .refreshToken("jwt-refreshToken")
+                .build();
+
+        when(authService.refreshToken(any(TokenRequest.class))).thenReturn(response);
+
+        this.mockMvc.perform(post("/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request))
+        )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").value("jwt-access-token"))
+                .andExpect(jsonPath("$.refreshToken").value("jwt-refresh-token"))
+                .andDo(print());
+
     }
 
 }

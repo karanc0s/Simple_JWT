@@ -10,6 +10,8 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.List;
+
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -37,7 +39,7 @@ public class SecurityIntegrationTest {
     void shouldRejectRequestWithInvalidToken() throws Exception {
         mockMvc.perform(
                         get("/home/secure")
-                                .header("Authorization", "Bearer invalid.token.value")
+                                .header("Authorization", "Bearer invalid.accessToken.value")
                 )
                 .andExpect(status().isUnauthorized());
     }
@@ -52,7 +54,7 @@ public class SecurityIntegrationTest {
         user.setEnabled(true);
 
         userRepo.saveAndFlush(user);
-        String token = jwtService.generateToken("user123");
+        String token = jwtService.generateToken("user123" , List.of("USER"));
 
         mockMvc.perform(
                         get("/home/secure")

@@ -6,56 +6,102 @@ import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.security.Key;
-import java.util.Date;
+import java.util.*;
 import java.util.function.Function;
 
 @Component
 @Slf4j
 public class JwtService {
 
-    private static final String SECRET = "357638792F423F4428472B4B6250655368566D597133743677397A2443264629";
-    private static final long TOKEN_EXPIRATION = 1000L * 60 * 60 * 24 * 7; // 7 days
+    // Constants
+    @Value("${app.jwt.jwt-secret}")
+    private String SECRET;
+    private static final long ACCESS_TOKEN_EXPIRATION = 1000L * 60 * 15; // 15 minutes
+    private static final long REFRESH_TOKEN_EXPIRATION = 1000L * 60 * 60 * 24 * 7; // 7 days
 
+    // ==========================================
+    // EXTRACTION & VALIDATION
+    // ==========================================
 
     public String extractUserName(String token) {
-        return getClaims(token , Claims::getSubject);
+        return getClaims(token, Claims::getSubject);
     }
 
     public Date extractExpiration(String token) {
-        return getClaims(token , Claims::getExpiration);
+        return getClaims(token, Claims::getExpiration);
     }
 
-    public boolean validateToken(String token , String principalUsername) {
+    public boolean validateToken(String token, String principalUsername) {
         final String username = extractUserName(token);
         return username.equals(principalUsername) && !isTokenExpired(token);
     }
 
-    public boolean isTokenExpired(String token) {
-        return extractExpiration(token).before(new Date());
+    public List<String> extractRoles(String token) {
+        return getClaims(token, claims -> {
+            List<?> rawRoles = claims.get("roles", List.class);
+            if (rawRoles == null) {
+                return List.of(); // Return empty list instead of null
+            }
+            return rawRoles.stream()
+                    .map(Object::toString)
+                    .toList();
+        });
     }
 
-    public <T> T getClaims(String token , Function<Claims, T> function){
-        final Claims claims = getAllClaimsFromToken(token);
-        return function.apply(claims);
+    public String getTokenType(String token) {
+        return getClaims(token, claims -> claims.get("type", String.class));
     }
 
-    public String generateToken(String username) {
+    // ==========================================
+    // TOKEN GENERATION
+    // ==========================================
+
+    public String generateToken(String username, List<String> roles) {
         log.info("generateToken(-)");
+        Map<String, Object> extraClaims = new HashMap<>();
+        extraClaims.put("roles", roles);
+        extraClaims.put("type", "ACCESS");
+
         return Jwts.builder()
+                .setClaims(extraClaims)
                 .setSubject(username)
                 .setIssuer("Authentication_Service")
                 .setIssuedAt(new Date(System.currentTimeMillis()))
-                .setExpiration(new Date(System.currentTimeMillis() + TOKEN_EXPIRATION))
-                .signWith(getSingKey() , SignatureAlgorithm.HS256)
+                .setExpiration(new Date(System.currentTimeMillis() + ACCESS_TOKEN_EXPIRATION))
+                .signWith(getSingKey(), SignatureAlgorithm.HS256)
                 .compact();
     }
 
-    private Key getSingKey() {
-        byte[] keyBytes = Decoders.BASE64.decode(SECRET);
-        return Keys.hmacShaKeyFor(keyBytes);
+    public String generateRefreshToken(String username) {
+        log.info("generateRefreshToken(-)");
+        Map<String, Object> extraClaims = new HashMap<>();
+        extraClaims.put("type", "REFRESH");
+
+        return Jwts.builder()
+                .setClaims(extraClaims)
+                .setSubject(username)
+                .setIssuer("Authentication_Service")
+                .setIssuedAt(new Date(System.currentTimeMillis()))
+                .setExpiration(new Date(System.currentTimeMillis() + REFRESH_TOKEN_EXPIRATION))
+                .signWith(getSingKey(), SignatureAlgorithm.HS256)
+                .compact();
+    }
+
+    // ==========================================
+    // PRIVATE HELPERS
+    // ==========================================
+
+    private boolean isTokenExpired(String token) {
+        return extractExpiration(token).before(new Date());
+    }
+
+    private <T> T getClaims(String token, Function<Claims, T> function) {
+        final Claims claims = getAllClaimsFromToken(token);
+        return function.apply(claims);
     }
 
     private Claims getAllClaimsFromToken(String token) {
@@ -64,5 +110,10 @@ public class JwtService {
                 .build()
                 .parseClaimsJws(token)
                 .getBody();
+    }
+
+    private Key getSingKey() {
+        byte[] keyBytes = Decoders.BASE64.decode(SECRET);
+        return Keys.hmacShaKeyFor(keyBytes);
     }
 }
