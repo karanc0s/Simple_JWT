@@ -10,21 +10,19 @@ import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.List;
 
 @AllArgsConstructor
 @Slf4j
 public class JwtFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
-    private final UserDetailsService userDetailsService;
 
     /**
      * Same contract as for {@code doFilter}, but guaranteed to be
@@ -53,37 +51,45 @@ public class JwtFilter extends OncePerRequestFilter {
         String token = authHeader.substring(7);
 
         try {
-            String username = jwtService.extractUserName(token);
+            // 1. Validate and extract ALL claims ONCE (1 CPU cycle)
+            if (jwtService.isTokenValid(token)) {
 
-            if (username != null &&
-                    SecurityContextHolder.getContext().getAuthentication() == null) {
+                // 2. Read from the in-memory claims object
+                String tokenType = jwtService.getTokenType(token);
+                if (!"ACCESS".equals(tokenType)) {
+                    log.warn("Blocked API request: Client attempted to use a {} token.", tokenType);
+                    sendUnauthorized(response);
+                    return;
+                }
 
-                UserDetails userDetails =
-                        userDetailsService.loadUserByUsername(username);
+                String username = jwtService.extractUserName(token);
 
-                if (jwtService.validateToken(token, userDetails.getUsername())) {
+                if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+
+                    // Note: SuppressWarnings or manual mapping as we discussed earlier
+                    List<String> rawRoles = jwtService.extractRoles(token);
+                    List<SimpleGrantedAuthority> authorities = rawRoles.stream()
+                            .map(Object::toString)
+                            .map(SimpleGrantedAuthority::new)
+                            .toList();
+
                     UsernamePasswordAuthenticationToken authentication =
                             new UsernamePasswordAuthenticationToken(
-                                    userDetails,
+                                    username,
                                     null,
-                                    userDetails.getAuthorities()
+                                    authorities
                             );
 
                     authentication.setDetails(
                             new WebAuthenticationDetailsSource().buildDetails(request)
                     );
-
                     SecurityContextHolder.getContext().setAuthentication(authentication);
                 }
             }
-
             filterChain.doFilter(request, response);
 
         } catch (JwtException e) {
-            log.warn("JWT validation failed: {}", e.getClass().getSimpleName());
-            sendUnauthorized(response);
-        } catch (UsernameNotFoundException e) {
-            log.warn("JWT user not found");
+            log.warn("JWT validation failed: {}", e.getMessage());
             sendUnauthorized(response);
         }
     }

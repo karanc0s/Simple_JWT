@@ -138,8 +138,8 @@ public class AuthControllerTest {
                 .content(objectMapper.writeValueAsString(request))
         )
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.accessToken").value("jwt-access-token"))
-                .andExpect(jsonPath("$.refreshToken").value("jwt-refresh-token"))
+                .andExpect(jsonPath("$.accessToken").value("jwt-accessToken"))
+                .andExpect(jsonPath("$.refreshToken").value("jwt-refreshToken"))
                 .andDo(print());
 
     }

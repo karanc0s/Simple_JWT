@@ -10,6 +10,7 @@ import com.karan.simplejwt1.entity.SimpleToken;
 import com.karan.simplejwt1.entity.SimpleUser;
 import com.karan.simplejwt1.exception.InvalidCredentialsException;
 import com.karan.simplejwt1.exception.NotFoundException;
+import io.jsonwebtoken.MalformedJwtException;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.exception.ConstraintViolationException;
@@ -21,7 +22,9 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 
@@ -38,6 +41,7 @@ public class AuthService implements IAuthService{
     private final TokenRepo tokenRepo;
 
     @Override
+    @Transactional
     public AuthResponse logIn(AuthRequest authRequest) {
         AuthResponse response;
         try{
@@ -83,11 +87,16 @@ public class AuthService implements IAuthService{
     }
 
     @Override
+    @Transactional
     public String register(RegisterRequest request) {
         String response;
         SimpleRole userRole = rolesRepo.findByRole("USER")
                 .orElseThrow(() -> new RuntimeException("Error: Default role not found in database."));
         try{
+            boolean isUserExists = userRepo.findByUsername(request.username()).isPresent();
+            if(isUserExists) {
+                throw new RuntimeException("Invalid username");
+            }
             String username = request.username();
             String pass = passwordEncoder.encode(request.password());
             String email = request.email();
@@ -122,7 +131,70 @@ public class AuthService implements IAuthService{
     }
 
     @Override
+    @Transactional
     public TokenResponse refreshToken(TokenRequest tokenRequest) {
-        return null;
+        log.info("Attempting to refresh token...");
+
+        try {
+            String oldRefreshToken = tokenRequest.token();
+
+            // 1. Extract and validate payload
+            String userName = jwtService.extractUserName(oldRefreshToken);
+            if (userName == null) {
+                throw new RuntimeException("Invalid Refresh Token: Subject is missing.");
+            }
+
+            // 2. Fetch User and Token from DB
+            SimpleUser user = userRepo.findByUsername(userName)
+                    .orElseThrow(() -> new NotFoundException("User not found for this token."));
+
+            SimpleToken dbToken = tokenRepo.findByToken(oldRefreshToken)
+                    .orElseThrow(() -> new RuntimeException("Refresh Token does not exist. Login Again"));
+
+            // 3. Security & Expiration Checks
+            if (dbToken.getExpiresAt().isBefore(Instant.now())) {
+                tokenRepo.delete(dbToken); // Clean up dead tokens
+                throw new RuntimeException("Refresh token has expired. Please log in again.");
+            }
+            if (dbToken.getIsRevoked()) {
+                throw new RuntimeException("Refresh token has been revoked. Please log in again.");
+            }
+            if (!user.isEnabled()) {
+                throw new RuntimeException("User account is disabled.");
+            }
+
+            // 4. Fetch up-to-date roles from DB
+            List<String> roles = user.getRoles().stream()
+                    .map(SimpleRole::getRole)
+                    .toList();
+
+            // 5. Generate new tokens
+            String newAccessToken = jwtService.generateToken(user.getUsername(), roles);
+            String newRefreshToken = jwtService.generateRefreshToken(user.getUsername());
+
+            // 6. Token Rotation (Delete old, save new)
+            tokenRepo.delete(dbToken);
+
+            SimpleToken newSimpleToken = new SimpleToken();
+            newSimpleToken.setToken(newRefreshToken); // Add passwordEncoder.encode() here if you are hashing them!
+            newSimpleToken.setUser(user);
+            newSimpleToken.setExpiresAt(jwtService.extractExpiration(newRefreshToken).toInstant());
+            tokenRepo.save(newSimpleToken);
+
+            log.info("Successfully refreshed tokens for user: {}", userName);
+
+            return TokenResponse.builder()
+                    .accessToken(newAccessToken)
+                    .refreshToken(newRefreshToken)
+                    .build();
+
+        }catch (MalformedJwtException e){
+            log.error("Invalid JWT token : {}", e.getMessage());
+            throw new MalformedJwtException(String.format("Invalid JWT token : %s", e.getMessage()));
+        }
+        catch (RuntimeException e) {
+            log.error("Token refresh failed: {}", e.getMessage());
+            throw new RuntimeException(String.format("Token refresh failed: %s", e.getMessage()));
+        }
     }
 }

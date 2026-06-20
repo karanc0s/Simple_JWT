@@ -1,8 +1,6 @@
 package com.karan.simplejwt1.auth.jwt;
 
-import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.*;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
@@ -38,6 +36,29 @@ public class JwtService {
     public boolean validateToken(String token, String principalUsername) {
         final String username = extractUserName(token);
         return username.equals(principalUsername) && !isTokenExpired(token);
+    }
+    public boolean isTokenValid(String token) {
+        try {
+            // If the signature is fake or the token is expired, this throws an exception.
+            Jwts.parserBuilder()
+                    .setSigningKey(getSingKey())
+                    .build()
+                    .parseClaimsJws(token);
+            return true; // Token is cryptographically valid and not expired!
+
+        } catch (SecurityException e) {
+            log.error("Invalid JWT signature: {}", e.getMessage());
+        } catch (MalformedJwtException e) {
+            log.error("Invalid JWT token: {}", e.getMessage());
+        } catch (ExpiredJwtException e) {
+            log.error("JWT token is expired: {}", e.getMessage());
+        } catch (UnsupportedJwtException e) {
+            log.error("JWT token is unsupported: {}", e.getMessage());
+        } catch (IllegalArgumentException e) {
+            log.error("JWT claims string is empty: {}", e.getMessage());
+        }
+
+        return false; // If any exception was thrown, the token is invalid.
     }
 
     public List<String> extractRoles(String token) {
@@ -104,7 +125,7 @@ public class JwtService {
         return function.apply(claims);
     }
 
-    private Claims getAllClaimsFromToken(String token) {
+    public Claims getAllClaimsFromToken(String token) {
         return Jwts.parserBuilder()
                 .setSigningKey(getSingKey())
                 .build()

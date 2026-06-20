@@ -3,6 +3,7 @@ package com.karan.simplejwt1.auth;
 
 import com.karan.simplejwt1.auth.service.IAuthService;
 import com.karan.simplejwt1.domain.*;
+import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -16,10 +17,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/auth")
 @Slf4j
+@AllArgsConstructor
 public class AuthController {
 
-    @Autowired
-    private IAuthService iAuthService;
+    private final IAuthService iAuthService;
 
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> logIn(@RequestBody AuthRequest request){

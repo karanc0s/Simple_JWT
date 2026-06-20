@@ -40,10 +40,9 @@ public class SecurityConfig {
 
     @Bean
     JwtFilter jwtFilter(
-            JwtService utils,
-            UserDetailsService service
+            JwtService utils
     ) {
-        return new JwtFilter(utils,service);
+        return new JwtFilter(utils);
     }
 
     @Bean

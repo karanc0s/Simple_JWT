@@ -30,10 +30,11 @@ server:
 
 logging:
   level:
-    root: WARN
-    org.hibernate.SQL: DEBUG
-    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
-    org.springframework.security: WARN
+    root: info
+
+app:
+  jwt:
+    jwt-secret: 357638792F423F4428472B4B6250655368566D597133743677397A2443264699
 
 #jwt:
 #  secret: test-secret-key-test-secret-key-test-secret-key
